@@ -1,0 +1,14 @@
+syntax  = "proto3";
+
+package analytics;
+
+import "google/protobuf/timestamp.proto";
+
+message AnalyticsV1 {
+  string eventId = 1;
+  string eventName = 2;
+  string serviceName = 3;
+  string serviceVersion = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  string payload = 6;
+}

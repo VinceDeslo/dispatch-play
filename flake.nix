@@ -28,6 +28,7 @@
               alejandra
               rust-bin.stable.latest.default
               rust-analyzer
+              protobuf_27
             ];
           };
         formatter = pkgs.alejandra;

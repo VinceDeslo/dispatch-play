@@ -1,5 +1,6 @@
-use std::io::Error;
+use std::{io::Error, time::{SystemTime, UNIX_EPOCH}};
 
+use prost::Message as ProstMessage;
 use rdkafka::{
     consumer::{Consumer, StreamConsumer},
     error::KafkaError,
@@ -10,6 +11,12 @@ use rdkafka::{
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Stdout};
 use uuid::Uuid;
+
+pub mod analytics {
+    include!(concat!(env!("OUT_DIR"), "/analytics.rs"));
+}
+
+use analytics::AnalyticsV1;
 
 #[tokio::main]
 async fn main() {
@@ -41,19 +48,44 @@ async fn handle_message(
     stdout_handle: &mut Stdout,
     message: Result<BorrowedMessage<'_>, KafkaError>,
 ) {
-    let msg = message.expect("failed to read message").detach();
-    let payload = msg.payload().unwrap();
-    stdout_handle.write_all(payload).await.unwrap();
+    let msg = message
+        .expect("failed to read message")
+        .detach();
+    let bytes = msg.payload().unwrap();
+    let payload = AnalyticsV1::decode(bytes)
+        .expect("failed to deserialize analytics payload");
+
+    stdout_handle.write_all(payload.payload.as_bytes()).await.unwrap();
     stdout_handle.write_all(b"\n").await.unwrap();
 }
 
 async fn handle_input(producer: &FutureProducer, topic: &str, line: Result<Option<String>, Error>) {
     if let Ok(Some(line)) = line {
-        let record = FutureRecord::<(), _>::to(topic).payload(&line);
+        let payload = build_analytics_v1(&line);
+        let bytes = payload.encode_to_vec();
+        let record = FutureRecord::<(), _>::to(topic).payload(&bytes);
         producer
             .send(record, Timeout::Never)
             .await
             .expect("failed to produce record");
+    }
+}
+
+fn build_analytics_v1(payload: &str) -> AnalyticsV1 {
+    let now = SystemTime::now();
+    let since = now.duration_since(UNIX_EPOCH)
+        .expect("failed to convert to time since epoch");
+
+    AnalyticsV1{
+        event_id: "123".to_string(),
+        event_name: "analytics.publish.v1".to_string(),
+        service_name: "dispatch-play".to_string(),
+        service_version: "0.1.0".to_string(),
+        timestamp: Some(prost_types::Timestamp{
+            nanos: since.subsec_nanos() as i32,
+            seconds: since.as_secs() as i64,
+        }),
+        payload: payload.to_string(),
     }
 }
 
