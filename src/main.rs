@@ -1,10 +1,14 @@
+use std::io::Error;
+
 use rdkafka::{
     consumer::{Consumer, StreamConsumer},
+    error::KafkaError,
+    message::BorrowedMessage,
     producer::{FutureProducer, FutureRecord},
     util::Timeout,
     ClientConfig, Message,
 };
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Stdout};
 use uuid::Uuid;
 
 #[tokio::main]
@@ -24,24 +28,32 @@ async fn main() {
 
         tokio::select! {
             message = consumer.recv() => {
-                let message = message.expect("failed to read message").detach();
-                let payload = message.payload().unwrap();
-                stdout.write_all(payload).await.unwrap();
-                stdout.write_all(b"\n").await.unwrap();
+                handle_message(&mut stdout, message).await;
             }
             line = input_lines.next_line() => {
-                match line {
-                    Ok(Some(line)) => {
-                        let record = FutureRecord::<(), _>::to(topic)
-                            .payload(&line);
-                        producer.send(record, Timeout::Never)
-                            .await
-                            .expect("failed to produce record");
-                    },
-                    _ => break,
-                }
+                handle_input(&producer, topic, line).await;
             }
         }
+    }
+}
+
+async fn handle_message(
+    stdout_handle: &mut Stdout,
+    message: Result<BorrowedMessage<'_>, KafkaError>,
+) {
+    let msg = message.expect("failed to read message").detach();
+    let payload = msg.payload().unwrap();
+    stdout_handle.write_all(payload).await.unwrap();
+    stdout_handle.write_all(b"\n").await.unwrap();
+}
+
+async fn handle_input(producer: &FutureProducer, topic: &str, line: Result<Option<String>, Error>) {
+    if let Ok(Some(line)) = line {
+        let record = FutureRecord::<(), _>::to(topic).payload(&line);
+        producer
+            .send(record, Timeout::Never)
+            .await
+            .expect("failed to produce record");
     }
 }
 
