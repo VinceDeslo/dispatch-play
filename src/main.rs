@@ -1,4 +1,7 @@
-use std::{io::Error, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    io::Error,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use prost::Message as ProstMessage;
 use rdkafka::{
@@ -48,14 +51,14 @@ async fn handle_message(
     stdout_handle: &mut Stdout,
     message: Result<BorrowedMessage<'_>, KafkaError>,
 ) {
-    let msg = message
-        .expect("failed to read message")
-        .detach();
+    let msg = message.expect("failed to read message").detach();
     let bytes = msg.payload().unwrap();
-    let payload = AnalyticsV1::decode(bytes)
-        .expect("failed to deserialize analytics payload");
+    let payload = AnalyticsV1::decode(bytes).expect("failed to deserialize analytics payload");
 
-    stdout_handle.write_all(payload.payload.as_bytes()).await.unwrap();
+    stdout_handle
+        .write_all(payload.payload.as_bytes())
+        .await
+        .unwrap();
     stdout_handle.write_all(b"\n").await.unwrap();
 }
 
@@ -73,15 +76,16 @@ async fn handle_input(producer: &FutureProducer, topic: &str, line: Result<Optio
 
 fn build_analytics_v1(payload: &str) -> AnalyticsV1 {
     let now = SystemTime::now();
-    let since = now.duration_since(UNIX_EPOCH)
+    let since = now
+        .duration_since(UNIX_EPOCH)
         .expect("failed to convert to time since epoch");
 
-    AnalyticsV1{
+    AnalyticsV1 {
         event_id: "123".to_string(),
         event_name: "analytics.publish.v1".to_string(),
         service_name: "dispatch-play".to_string(),
         service_version: "0.1.0".to_string(),
-        timestamp: Some(prost_types::Timestamp{
+        timestamp: Some(prost_types::Timestamp {
             nanos: since.subsec_nanos() as i32,
             seconds: since.as_secs() as i64,
         }),
